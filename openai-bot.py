@@ -147,6 +147,8 @@ def context_h(message):
             tmp = cfg[chat_id]['context'].copy()
             if chat_id in cfg and len(tmp) > 0:
                 dir_name = os.path.join(work_dir, f'{chat_id}')
+                if not os.path.exists(dir_name):
+                    os.makedirs(dir_name)
                 if len(args) > 1:
                     fn = os.path.join(dir_name, args[1] + '.txt')
                     with open(fn, 'w', encoding='utf-8') as f:
