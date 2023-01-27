@@ -5,4 +5,5 @@
 # features
 1) optionally keeps context
 2) save/load/modify context
-3) password protected
+3) send auto sliced context
+4) password protected

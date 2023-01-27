@@ -19,6 +19,7 @@ cfg = {
         'authorised': False,
         'with_context': True,
         'html_log': False,
+        'auto_slice': ':4',
         'max_tokens': int(config('MAX_TOKENS')),
         'temperature': float(config('TEMPERATURE')),
         'engine': config('ENGINE')
@@ -52,7 +53,7 @@ def bot_send(chat_id, mes):
     if chat_id not in cfg or not cfg[chat_id]['with_context']:
         keyboard.row('/start', '/context on', '/params')
     else:
-        keyboard.row('/start', '/context', '/params')
+        keyboard.row('/start', '/context', '/context to_send', '/params')
         keyboard.row('/context off', '/context clear', '/context load', '/context save')
         keyboard.row('/context items', '/context slice', '/context to_file', '/context from_file')
     bot.send_message(chat_id, mes, reply_markup=keyboard)
@@ -83,6 +84,17 @@ def start(message):
              'try to find a suitable answer.')
 
 
+def slice_from_str(s):
+    return slice(*[{True: lambda n: None, False: int}[x == ''](x) for x in (s.split(':') + ['', '', ''])[:3]])
+
+
+def bot_send_4000(chat_id, s):
+    if len(s) > 4000:
+        bot_send(chat_id, s[:4000] + '\n...')
+    else:
+        bot_send(chat_id, s)
+
+
 # Handler for command /context
 @bot.message_handler(commands=['context'])
 def context_h(message):
@@ -93,11 +105,13 @@ def context_h(message):
     args = extract_arg(message.text)
     if len(args) == 0:
         if chat_id in cfg and len(cfg[chat_id]['context']) > 0:
-            bot_send(chat_id, '\n\n'.join(cfg[chat_id]['context']))
+            bot_send_4000(chat_id, '\n\n'.join(cfg[chat_id]['context']))
         else:
             bot_send(chat_id, 'Context is Empty')
         return
     match args[0]:
+        case 'to_send':
+            bot_send_4000(chat_id, '\n\n'.join(cfg[chat_id]['context'][slice_from_str(cfg[chat_id]['auto_slice'])]))
         case 'clear':
             cfg[chat_id]['context'] = []
             bot_send(chat_id, 'Context was cleared and saved.')
@@ -121,7 +135,7 @@ def context_h(message):
                 bot_send(chat_id, 'Context is Empty')
         case 'load':
             cfg_load()
-            bot_send(chat_id, '\n\n'.join(cfg[chat_id]['context']))
+            bot_send_4000(chat_id, '\n\n'.join(cfg[chat_id]['context']))
         case 'save':
             cfg_save()
             bot_send(chat_id, 'Context saved.')
@@ -141,7 +155,7 @@ def context_h(message):
                     if i == int(args[1]):
                         with open(os.path.join(root_dir, fn), 'r') as fp:
                             cfg[chat_id]['context'] = json.load(fp)
-                        bot_send(chat_id, '\n\n'.join(cfg[chat_id]['context']))
+                        bot_send_4000(chat_id, '\n\n'.join(cfg[chat_id]['context']))
                         break
         case 'to_file':
             tmp = cfg[chat_id]['context'].copy()
@@ -174,9 +188,8 @@ def context_h(message):
                                   '"/context slice ::2" - keep only requests\n'
                                   '"/context slice 1::2" - keep only responses\n')
             else:
-                cfg[chat_id]['context'] = cfg[chat_id]['context'][
-                    slice(*[{True: lambda n: None, False: int}[x == ''](x) for x in (args[1].split(':') + ['', '', ''])[:3]])]
-                bot_send(chat_id, '\n\n'.join(cfg[chat_id]['context']))
+                cfg[chat_id]['context'] = cfg[chat_id]['context'][slice_from_str(args[1])]
+                bot_send_4000(chat_id, '\n\n'.join(cfg[chat_id]['context']))
 
 
 def extract_arg(arg):
@@ -193,7 +206,8 @@ def params(message):
     if len(args) == 0:
         bot_send(chat_id,
                  f"/params max_tokens={cfg[chat_id]['max_tokens']} temperature={cfg[chat_id]['temperature']} "
-                 f"engine={cfg[chat_id]['engine']} html_log={cfg[chat_id]['html_log']}")
+                 f"engine={cfg[chat_id]['engine']} html_log={cfg[chat_id]['html_log']} "
+                 f"auto_slice={cfg[chat_id]['auto_slice']}")
         return
     for arg in args:
         x = arg.split('=')
@@ -208,6 +222,10 @@ def params(message):
         if x[0] == 'engine':
             cfg[chat_id]['engine'] = x[1]
             bot_send(chat_id, f'engine = {x[1]}')
+            continue
+        if x[0] == 'auto_slice':
+            cfg[chat_id]['auto_slice'] = x[1]
+            bot_send(chat_id, f'auto_slice = {x[1]}')
             continue
         if x[0] == 'html_log':
             cfg[chat_id]['html_log'] = x[1] == '1' or x[1] == 'true' or x[1] == 'True'
@@ -238,8 +256,15 @@ def dialog(message):
     if not cfg[chat_id]['with_context']:
         prompt = message.text
     else:
-        cfg[chat_id]['context'].append('\n' + message.text.strip("\n"))
-        prompt = '\n\n'.join(cfg[chat_id]['context'])
+        if len(cfg[chat_id]['auto_slice']) > 0:
+            temp = cfg[chat_id]['context'].copy()
+            temp = temp[slice_from_str(cfg[chat_id]['auto_slice'])]
+            temp.append('\n' + message.text.strip("\n"))
+            prompt = '\n\n'.join(temp)
+            cfg[chat_id]['context'].append('\n' + message.text.strip("\n"))
+        else:
+            cfg[chat_id]['context'].append('\n' + message.text.strip("\n"))
+            prompt = '\n\n'.join(cfg[chat_id]['context'])
     print(message.text)
     print()
     response = send_to_openai(prompt,
