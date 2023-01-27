@@ -158,25 +158,32 @@ def context_h(message):
                         bot_send_4000(chat_id, '\n\n'.join(cfg[chat_id]['context']))
                         break
         case 'to_file':
-            tmp = cfg[chat_id]['context'].copy()
-            if chat_id in cfg and len(tmp) > 0:
+            if chat_id in cfg and len(cfg[chat_id]['context']) > 0:
                 dir_name = os.path.join(work_dir, f'{chat_id}')
                 if not os.path.exists(dir_name):
                     os.makedirs(dir_name)
-                if len(args) > 1:
+                if len(args) > 1 and args[1] != 'txt':
                     fn = os.path.join(dir_name, args[1] + '.txt')
                     with open(fn, 'w', encoding='utf-8') as f:
-                        f.write('\n\n'.join(tmp))
+                        f.write('\n\n'.join(cfg[chat_id]['context']))
                 else:
-                    tmp.append(f'\nPropose file name without extension for this dialogue.\n')
+                    tmp = cfg[chat_id]['context'].copy()
+                    tmp = tmp[:2]
+                    tmp.append(f'Propose file name without extension for this dialogue.\n')
                     prompt = '\n\n'.join(tmp)
                     response = send_to_openai(prompt)
                     fn = response.choices[0].text.strip("\n")
                     fn += datetime.now().strftime("_%Y%m%d_%H%M%S")
-                    fn += '.json'
-                    fn = os.path.join(dir_name, fn)
-                    with open(fn, 'w') as f:
-                        json.dump(cfg[chat_id]['context'], f, indent=4)
+                    if len(args) > 1 and args[1] == 'txt':
+                        fn += '.txt'
+                        fn = os.path.join(dir_name, fn)
+                        with open(fn, 'w', encoding='utf-8') as f:
+                            f.write('\n\n'.join(cfg[chat_id]['context']))
+                    else:
+                        fn += '.json'
+                        fn = os.path.join(dir_name, fn)
+                        with open(fn, 'w') as f:
+                            json.dump(cfg[chat_id]['context'], f, indent=4)
                 bot_send(chat_id, f'Saved to {fn}')
             else:
                 bot_send(chat_id, 'Nothing to save')
