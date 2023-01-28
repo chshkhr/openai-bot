@@ -19,7 +19,7 @@ cfg = {
         'authorised': False,
         'with_context': True,
         'html_log': False,
-        'auto_slice': ':4',
+        'auto_slice': '2',
         'max_tokens': int(config('MAX_TOKENS')),
         'temperature': float(config('TEMPERATURE')),
         'engine': config('ENGINE')
@@ -80,12 +80,23 @@ def start(message):
     chat_id = str(message.chat.id)
     cfg_load()
     bot_send(chat_id,
-             'Hi! I am a bot to help you get the right answers to your questions. Type in your question and I will '
-             'try to find a suitable answer.')
+             'Hi! I am a bot to help you get the right answers to your questions. '
+             'Type in your question and I will try to find a suitable answer.')
 
 
-def slice_from_str(s):
+def slice_obj_from_str(s):
     return slice(*[{True: lambda n: None, False: int}[x == ''](x) for x in (s.split(':') + ['', '', ''])[:3]])
+
+
+def slice_by_str(ctx, slice_str):
+    if slice_str.find(':') < 0:
+        i = int(slice_str)
+        if 2 * i < len(ctx):
+            return ctx[:i] + ctx[-i:]
+        else:
+            return ctx.copy()
+    else:
+        return ctx[slice_obj_from_str(slice_str)]
 
 
 def bot_send_4000(chat_id, s):
@@ -111,7 +122,7 @@ def context_h(message):
         return
     match args[0]:
         case 'to_send':
-            bot_send_4000(chat_id, '\n\n'.join(cfg[chat_id]['context'][slice_from_str(cfg[chat_id]['auto_slice'])]))
+            bot_send_4000(chat_id, '\n\n'.join(slice_by_str(cfg[chat_id]['context'], cfg[chat_id]['auto_slice'])))
         case 'clear':
             cfg[chat_id]['context'] = []
             bot_send(chat_id, 'Context was cleared and saved.')
@@ -193,9 +204,10 @@ def context_h(message):
                                   '"/context slice :4" - keep only first 4 items\n'
                                   '"/context slice -5:" - keep only last 5 items\n'
                                   '"/context slice ::2" - keep only requests\n'
-                                  '"/context slice 1::2" - keep only responses\n')
+                                  '"/context slice 1::2" - keep only responses\n'
+                                  '"/context slice 2" - keep 2 first and 2 last\n')
             else:
-                cfg[chat_id]['context'] = cfg[chat_id]['context'][slice_from_str(args[1])]
+                cfg[chat_id]['context'] = slice_by(cfg[chat_id]['context'], args[1])
                 bot_send_4000(chat_id, '\n\n'.join(cfg[chat_id]['context']))
 
 
@@ -264,8 +276,7 @@ def dialog(message):
         prompt = message.text
     else:
         if len(cfg[chat_id]['auto_slice']) > 0:
-            temp = cfg[chat_id]['context'].copy()
-            temp = temp[slice_from_str(cfg[chat_id]['auto_slice'])]
+            temp = slice_by_str(cfg[chat_id]['context'], cfg[chat_id]['auto_slice'])
             temp.append('\n' + message.text.strip("\n"))
             prompt = '\n\n'.join(temp)
             cfg[chat_id]['context'].append('\n' + message.text.strip("\n"))
