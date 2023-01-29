@@ -308,13 +308,13 @@ def dialog(message):
     if not cfg[chat_id]['with_context']:
         prompt = message.text
     else:
-        if len(cfg[chat_id]['auto_slice']) > 0:
+        if len(cfg[chat_id]['auto_slice']) > 0 and len(cfg[chat_id]['context']) > 0:
             temp = slice_by_str(cfg[chat_id]['context'], cfg[chat_id]['auto_slice'])
-            temp.append('\n' + message.text.strip("\n"))
+            temp.append(message.text.strip("\n"))
             prompt = '\n\n'.join(temp)
-            cfg[chat_id]['context'].append('\n' + message.text.strip("\n"))
+            cfg[chat_id]['context'].append(message.text.strip("\n"))
         else:
-            cfg[chat_id]['context'].append('\n' + message.text.strip("\n"))
+            cfg[chat_id]['context'].append(message.text.strip("\n"))
             prompt = '\n\n'.join(cfg[chat_id]['context'])
     print(message.text)
     print()
