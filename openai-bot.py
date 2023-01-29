@@ -54,8 +54,8 @@ def bot_send(chat_id, mes):
         keyboard.row('/start', '/context on', '/params')
     else:
         keyboard.row('/start', '/context', '/context to_send', '/params')
-        keyboard.row('/context off', '/context clear', '/context load', '/context save')
-        keyboard.row('/context items', '/context slice', '/context to_file', '/context from_file')
+        keyboard.row('/context slice', '/context edit', '/context delete', '/context clear')
+        keyboard.row('/context to_file', '/context from_file', '/context off')
     bot.send_message(chat_id, mes, reply_markup=keyboard)
 
 
@@ -106,6 +106,22 @@ def bot_send_4000(chat_id, s):
         bot_send(chat_id, s)
 
 
+def context_items(chat_id):
+    res = ""
+    if len(cfg[chat_id]['context']) > 0:
+        i = 0
+        for s in cfg[chat_id]['context']:
+            i += 1
+            res += str(i) + ") "
+            s = s.strip("\n").split("\n")[0]
+            if len(s) > 60:
+                res += s[:60] + "...\n"
+            else:
+                res += s + "\n"
+
+    return res
+
+
 # Handler for command /context
 @bot.message_handler(commands=['context'])
 def context_h(message):
@@ -126,30 +142,18 @@ def context_h(message):
         case 'clear':
             cfg[chat_id]['context'] = []
             bot_send(chat_id, 'Context was cleared and saved.')
+            cfg_save()
         case 'on':
+            cfg[chat_id]['context'] = []
             cfg[chat_id]['with_context'] = True
+            cfg_save()
             bot_send(chat_id, 'The new query will extend the previous one.\n '
                               'You can modify context be "/context [smth]" commands.')
         case 'off':
+            cfg[chat_id]['context'] = []
             cfg[chat_id]['with_context'] = False
-            bot_send(chat_id, 'Each request now goes by itself.')
-        case 'items':
-            if len(args) == 1:
-                if len(cfg[chat_id]['context']) > 0:
-                    i = 0
-                    res = ""
-                    for s in cfg[chat_id]['context']:
-                        i += 1
-                        res += str(i) + ") " + s.strip("\n").split("\n")[0][:40] + "...\n"
-                    bot_send(chat_id, res)
-            else:
-                bot_send(chat_id, 'Context is Empty')
-        case 'load':
-            cfg_load()
-            bot_send_4000(chat_id, '\n\n'.join(cfg[chat_id]['context']))
-        case 'save':
             cfg_save()
-            bot_send(chat_id, 'Context saved.')
+            bot_send(chat_id, 'Each request now goes by itself.')
         case 'from_file':
             root_dir = os.path.join(work_dir, f'{chat_id}')
             if len(args) == 1:
@@ -168,6 +172,7 @@ def context_h(message):
                             cfg[chat_id]['context'] = json.load(fp)
                         bot_send_4000(chat_id, '\n\n'.join(cfg[chat_id]['context']))
                         break
+            cfg_save()
         case 'to_file':
             if chat_id in cfg and len(cfg[chat_id]['context']) > 0:
                 dir_name = os.path.join(work_dir, f'{chat_id}')
@@ -198,17 +203,49 @@ def context_h(message):
                 bot_send(chat_id, f'Saved to {fn}')
             else:
                 bot_send(chat_id, 'Nothing to save')
-        case 'slice':
-            if len(args) == 1:
-                bot_send(chat_id, 'Examples:\n '
-                                  '"/context slice :4" - keep only first 4 items\n'
-                                  '"/context slice -5:" - keep only last 5 items\n'
-                                  '"/context slice ::2" - keep only requests\n'
-                                  '"/context slice 1::2" - keep only responses\n'
-                                  '"/context slice 2" - keep 2 first and 2 last\n')
+        case 'edit':
+            if chat_id in cfg and len(cfg[chat_id]['context']) > 0:
+                if len(args) < 3:
+                    bot_send(chat_id, context_items(chat_id) + '\nExample:\n '
+                                                               '"/context edit 3 New Text." - replace 3th item with '
+                                                               '"New Text."\n')
+                else:
+                    cfg[chat_id]['context'][int(args[1]) - 1] = message.text[15 + len(args[1]):].strip()
+                    bot_send(chat_id, context_items(chat_id))
+                cfg_save()
             else:
-                cfg[chat_id]['context'] = slice_by(cfg[chat_id]['context'], args[1])
-                bot_send_4000(chat_id, '\n\n'.join(cfg[chat_id]['context']))
+                bot_send(chat_id, 'Context is Empty')
+        case 'delete':
+            if chat_id in cfg and len(cfg[chat_id]['context']) > 0:
+                if len(args) < 2:
+                    bot_send(chat_id, context_items(chat_id) + '\nExample:\n '
+                                                               '"/context delete 3 5" - delete 3th and 5th items\n')
+                else:
+                    y = []
+                    for x in args[1:]:
+                        y += [int(x) - 1]
+                    y.sort(reverse=True)
+                    for x in y:
+                        cfg[chat_id]['context'].pop(x)
+                    bot_send(chat_id, context_items(chat_id))
+                cfg_save()
+            else:
+                bot_send(chat_id, 'Context is Empty')
+        case 'slice':
+            if chat_id in cfg and len(cfg[chat_id]['context']) > 0:
+                if len(args) == 1:
+                    bot_send(chat_id, context_items(chat_id) + '\nExamples:\n '
+                                                               '"/context slice :4" - keep only first 4 items\n'
+                                                               '"/context slice -5:" - keep only last 5 items\n'
+                                                               '"/context slice ::2" - keep only requests\n'
+                                                               '"/context slice 1::2" - keep only responses\n'
+                                                               '"/context slice 2" - keep 2 first and 2 last\n')
+                else:
+                    cfg[chat_id]['context'] = slice_by_str(cfg[chat_id]['context'], args[1])
+                    bot_send(chat_id, context_items(chat_id))
+                cfg_save()
+            else:
+                bot_send(chat_id, 'Context is Empty')
 
 
 def extract_arg(arg):
@@ -230,26 +267,22 @@ def params(message):
         return
     for arg in args:
         x = arg.split('=')
-        if x[0] == 'max_tokens':
-            cfg[chat_id]['max_tokens'] = int(x[1])
-            bot_send(chat_id, f'max_tokens = {x[1]}')
-            continue
-        if x[0] == 'temperature':
-            cfg[chat_id]['temperature'] = float(x[1])
-            bot_send(chat_id, f'temperature = {x[1]}')
-            continue
-        if x[0] == 'engine':
-            cfg[chat_id]['engine'] = x[1]
-            bot_send(chat_id, f'engine = {x[1]}')
-            continue
-        if x[0] == 'auto_slice':
-            cfg[chat_id]['auto_slice'] = x[1]
-            bot_send(chat_id, f'auto_slice = {x[1]}')
-            continue
-        if x[0] == 'html_log':
-            cfg[chat_id]['html_log'] = x[1] == '1' or x[1] == 'true' or x[1] == 'True'
-            bot_send(chat_id, f"html_log = {cfg[chat_id]['html_log']}")
-            continue
+        match x[0]:
+            case 'max_tokens':
+                cfg[chat_id]['max_tokens'] = int(x[1])
+                bot_send(chat_id, f'max_tokens = {x[1]}')
+            case 'temperature':
+                cfg[chat_id]['temperature'] = float(x[1])
+                bot_send(chat_id, f'temperature = {x[1]}')
+            case 'engine':
+                cfg[chat_id]['engine'] = x[1]
+                bot_send(chat_id, f'engine = {x[1]}')
+            case 'auto_slice':
+                cfg[chat_id]['auto_slice'] = x[1]
+                bot_send(chat_id, f'auto_slice = {x[1]}')
+            case 'html_log':
+                cfg[chat_id]['html_log'] = x[1] == '1' or x[1] == 'true' or x[1] == 'True'
+                bot_send(chat_id, f"html_log = {cfg[chat_id]['html_log']}")
     cfg_save()
 
 
