@@ -198,15 +198,27 @@ def context_h(message):
                 if not os.path.exists(dir_name):
                     os.makedirs(dir_name)
                 if len(args) > 1 and args[1] != 'txt':
-                    fn = os.path.join(dir_name, args[1] + '.txt')
-                    with open(fn, 'w', encoding='utf-8') as f:
-                        f.write('\n\n'.join(cfg[chat_id]['context']))
+                    i = args[1].find('.')
+                    if i > 0:
+                        ext = args[1][i:].strip()
+                        if ext == 'txt':
+                            fn = os.path.join(dir_name, args[1])
+                            with open(fn, 'w', encoding='utf-8') as f:
+                                f.write('\n\n'.join(cfg[chat_id]['context']))
+                        else:
+                            fn = os.path.join(dir_name, args[1][:i] + '.json')
+                            with open(fn, 'w') as f:
+                                json.dump(cfg[chat_id]['context'], f, indent=4)
+                    else:
+                        fn = os.path.join(dir_name, args[1] + '.json')
+                        with open(fn, 'w') as f:
+                            json.dump(cfg[chat_id]['context'], f, indent=4)
                 else:
                     tmp = cfg[chat_id]['context'].copy()
                     tmp = tmp[:2]
                     tmp.append(f'Propose file name without extension for this dialogue.\n')
                     prompt = '\n\n'.join(tmp)
-                    response = send_to_openai(prompt)
+                    response = send_to_openai(prompt, chat_id)
                     fn = response.choices[0].text.strip("\n")
                     fn += datetime.now().strftime("_%Y%m%d_%H%M%S")
                     if len(args) > 1 and args[1] == 'txt':
@@ -306,15 +318,18 @@ def params(message):
 
 
 # Send a request to OpenAI
-def send_to_openai(prompt, engine="text-davinci-003", max_tokens="2000", temperature="0.5"):
-    return openai.Completion.create(
-        engine=engine,
-        prompt=prompt,
-        max_tokens=int(max_tokens),
-        n=1,
-        stop=None,
-        temperature=float(temperature),
-    )
+def send_to_openai(prompt, chat_id, engine="text-davinci-003", max_tokens=100, temperature=0.5):
+    try:
+        return openai.Completion.create(
+            engine=engine,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            n=1,
+            stop=None,
+            temperature=temperature,
+        )
+    except Exception as e:
+        bot_send(chat_id, f"OpenAI Error: {e=}, {type(e)=}")
 
 
 # Function for processing incoming messages and constructing a dialog context
@@ -341,6 +356,7 @@ def dialog(message):
     print(message.text)
     print()
     response = send_to_openai(prompt,
+                              chat_id,
                               engine=cfg[chat_id]['engine'],
                               max_tokens=cfg[chat_id]['max_tokens'],
                               temperature=cfg[chat_id]['temperature'])
