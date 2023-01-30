@@ -49,13 +49,13 @@ cfg_load()
 
 
 def bot_send(chat_id, mes):
-    keyboard = types.ReplyKeyboardMarkup(True, True)
+    keyboard = types.ReplyKeyboardMarkup(is_persistent=True)
     if chat_id not in cfg or not cfg[chat_id]['with_context']:
         keyboard.row('/start', '/context on', '/params')
     else:
         keyboard.row('/start', '/context', '/context to_send', '/params')
-        keyboard.row('/context slice', '/context edit', '/context delete', '/context clear')
-        keyboard.row('/context to_file', '/context from_file', '/context off')
+        keyboard.row('/context slice', '/context edit', '/context delete', '/context slice :-2', )
+        keyboard.row('/context to_file', '/context from_file', '/context clear', '/context off')
     bot.send_message(chat_id, mes, reply_markup=keyboard)
 
 
@@ -118,8 +118,25 @@ def context_items(chat_id):
                 res += s[:60] + "...\n"
             else:
                 res += s + "\n"
-
     return res
+
+
+def bot_send_mes_empty(chat_id):
+    bot_send(chat_id, 'Context is Empty')
+
+
+def bot_send_items(chat_id):
+    if len(cfg[chat_id]['context']) > 0:
+        bot_send_4000(chat_id, context_items(chat_id))
+    else:
+        bot_send_mes_empty(chat_id)
+
+
+def bot_send_text(chat_id, text):
+    if len(text) > 0:
+        bot_send_4000(chat_id, text)
+    else:
+        bot_send_mes_empty(chat_id)
 
 
 # Handler for command /context
@@ -134,14 +151,14 @@ def context_h(message):
         if chat_id in cfg and len(cfg[chat_id]['context']) > 0:
             bot_send_4000(chat_id, '\n\n'.join(cfg[chat_id]['context']))
         else:
-            bot_send(chat_id, 'Context is Empty')
+            bot_send_mes_empty(chat_id)
         return
     match args[0]:
         case 'to_send':
             bot_send_4000(chat_id, '\n\n'.join(slice_by_str(cfg[chat_id]['context'], cfg[chat_id]['auto_slice'])))
         case 'clear':
             cfg[chat_id]['context'] = []
-            bot_send(chat_id, 'Context was cleared and saved.')
+            bot_send(chat_id, 'Context has been cleared.')
             cfg_save()
         case 'on':
             cfg[chat_id]['context'] = []
@@ -162,7 +179,7 @@ def context_h(message):
                 for path in glob.glob('*.json', root_dir=root_dir):
                     i += 1
                     res += f'{i}) {path}\n'
-                bot_send(chat_id, res)
+                bot_send_text(chat_id, res)
             else:
                 i = 0
                 for fn in glob.glob('*.json', root_dir=root_dir):
@@ -170,7 +187,7 @@ def context_h(message):
                     if i == int(args[1]):
                         with open(os.path.join(root_dir, fn), 'r') as fp:
                             cfg[chat_id]['context'] = json.load(fp)
-                        bot_send_4000(chat_id, '\n\n'.join(cfg[chat_id]['context']))
+                        bot_send_text(chat_id, '\n\n'.join(cfg[chat_id]['context']))
                         break
             cfg_save()
         case 'to_file':
@@ -214,7 +231,7 @@ def context_h(message):
                     bot_send(chat_id, context_items(chat_id))
                 cfg_save()
             else:
-                bot_send(chat_id, 'Context is Empty')
+                bot_send_mes_empty(chat_id)
         case 'delete':
             if chat_id in cfg and len(cfg[chat_id]['context']) > 0:
                 if len(args) < 2:
@@ -227,10 +244,10 @@ def context_h(message):
                     y.sort(reverse=True)
                     for x in y:
                         cfg[chat_id]['context'].pop(x)
-                    bot_send(chat_id, context_items(chat_id))
+                    bot_send_items(chat_id)
                 cfg_save()
             else:
-                bot_send(chat_id, 'Context is Empty')
+                bot_send_mes_empty(chat_id)
         case 'slice':
             if chat_id in cfg and len(cfg[chat_id]['context']) > 0:
                 if len(args) == 1:
@@ -242,10 +259,10 @@ def context_h(message):
                                                                '"/context slice 2" - keep 2 first and 2 last\n')
                 else:
                     cfg[chat_id]['context'] = slice_by_str(cfg[chat_id]['context'], args[1])
-                    bot_send(chat_id, context_items(chat_id))
+                    bot_send_items(chat_id)
                 cfg_save()
             else:
-                bot_send(chat_id, 'Context is Empty')
+                bot_send_mes_empty(chat_id)
 
 
 def extract_arg(arg):
@@ -305,6 +322,9 @@ def dialog(message):
     if chat_id not in cfg or not cfg[chat_id]['authorised']:
         bot_ask_pswd(chat_id)
         return
+    if message.text[0] == '/':
+        start(message)
+        return
     if not cfg[chat_id]['with_context']:
         prompt = message.text
     else:
@@ -322,20 +342,24 @@ def dialog(message):
                               cfg[chat_id]['engine'],
                               cfg[chat_id]['max_tokens'],
                               cfg[chat_id]['temperature'])
-    if cfg[chat_id]['with_context']:
-        cfg[chat_id]['context'].append(response.choices[0].text.strip("\n"))
-    cfg_save()
-    if cfg[chat_id]['html_log']:
-        dir_name = os.path.join(work_dir, f'{chat_id}')
-        if not os.path.exists(dir_name):
-            os.makedirs(dir_name)
-        with open(dir_name + '/' + datetime.now().strftime("%Y-%m-%d") + '.html', 'a', encoding='utf-8') as f:
-            f.write(
-                f'<div style="margin:15px;padding:15px;width:600px;overflow:auto;white-space:pre-wrap;'
-                f'border-style:double;">\n')
-            f.write(f'<h4>{prompt}</h4>\n')
-            f.write(f'<pre style="white-space:pre-wrap;">\n{response.choices[0].text}\n</pre>\n</div>\n\n')
-    bot_send(chat_id, response.choices[0].text)
+    if len(response.choices[0].text.strip()) == 0:
+        cfg[chat_id]['context'].pop(len(cfg[chat_id]['context']) - 1)
+        bot_send(chat_id, 'TB: Not understood. Try another Prompt.')
+    else:
+        if cfg[chat_id]['with_context']:
+            cfg[chat_id]['context'].append(response.choices[0].text.strip("\n"))
+        cfg_save()
+        if cfg[chat_id]['html_log']:
+            dir_name = os.path.join(work_dir, f'{chat_id}')
+            if not os.path.exists(dir_name):
+                os.makedirs(dir_name)
+            with open(dir_name + '/' + datetime.now().strftime("%Y-%m-%d") + '.html', 'a', encoding='utf-8') as f:
+                f.write(
+                    f'<div style="margin:15px;padding:15px;width:600px;overflow:auto;white-space:pre-wrap;'
+                    f'border-style:double;">\n')
+                f.write(f'<h4>{prompt}</h4>\n')
+                f.write(f'<pre style="white-space:pre-wrap;">\n{response.choices[0].text}\n</pre>\n</div>\n\n')
+        bot_send(chat_id, response.choices[0].text)
 
 
 while True:
