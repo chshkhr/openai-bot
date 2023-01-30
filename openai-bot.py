@@ -19,7 +19,7 @@ cfg = {
         'authorised': False,
         'with_context': True,
         'html_log': False,
-        'auto_slice': '2',
+        'auto_slice': '4',
         'max_tokens': int(config('MAX_TOKENS')),
         'temperature': float(config('TEMPERATURE')),
         'engine': config('ENGINE')
@@ -89,7 +89,9 @@ def slice_obj_from_str(s):
 
 
 def slice_by_str(ctx, slice_str):
-    if slice_str.find(':') < 0:
+    if len(slice_str.strip()) == 0:
+        return ctx
+    elif slice_str.find(':') < 0:
         i = int(slice_str)
         if 2 * i < len(ctx):
             return ctx[:i] + ctx[-i:]
@@ -304,7 +306,7 @@ def params(message):
 
 
 # Send a request to OpenAI
-def send_to_openai(prompt, engine="text-davinci-003", max_tokens="3000", temperature="0.7"):
+def send_to_openai(prompt, engine="text-davinci-003", max_tokens="2000", temperature="0.5"):
     return openai.Completion.create(
         engine=engine,
         prompt=prompt,
@@ -339,9 +341,9 @@ def dialog(message):
     print(message.text)
     print()
     response = send_to_openai(prompt,
-                              cfg[chat_id]['engine'],
-                              cfg[chat_id]['max_tokens'],
-                              cfg[chat_id]['temperature'])
+                              engine=cfg[chat_id]['engine'],
+                              max_tokens=cfg[chat_id]['max_tokens'],
+                              temperature=cfg[chat_id]['temperature'])
     if len(response.choices[0].text.strip()) == 0:
         cfg[chat_id]['context'].pop(len(cfg[chat_id]['context']) - 1)
         bot_send(chat_id, 'TB: Not understood. Try another Prompt.')
